@@ -49,6 +49,37 @@ def compile_one_page_pdf(markdown_text):
     clean_text = markdown_text.encode('latin-1', 'replace').decode('latin-1')
     lines = clean_text.split('\n')
 
+    PAGE_WIDTH = 210
+    LEFT_MARGIN = 12
+    RIGHT_MARGIN = 12
+    CONTENT_WIDTH = PAGE_WIDTH - LEFT_MARGIN - RIGHT_MARGIN  # 186mm
+    BULLET_INDENT = 4
+
+    def safe_multicell(text, width, line_h=4.5):
+        """Wrap multi_cell to avoid 'Not enough horizontal space' on long unbreakable tokens."""
+        if not text:
+            pdf.ln(line_h)
+            return
+        # Insert zero-width-safe break points into very long unbroken tokens (URLs, emails, etc.)
+        max_chars_per_segment = 60
+        words = text.split(' ')
+        safe_words = []
+        for w in words:
+            if len(w) > max_chars_per_segment:
+                # Break long token into chunks so FPDF can wrap it
+                chunks = [w[j:j + max_chars_per_segment] for j in range(0, len(w), max_chars_per_segment)]
+                safe_words.append(' '.join(chunks))
+            else:
+                safe_words.append(w)
+        safe_text = ' '.join(safe_words)
+        try:
+            pdf.multi_cell(width, line_h, safe_text)
+        except Exception:
+            # Last-resort fallback: render character by character in small chunks
+            pdf.set_x(LEFT_MARGIN)
+            for k in range(0, len(safe_text), 40):
+                pdf.multi_cell(width, line_h, safe_text[k:k + 40])
+
     for line in lines:
         stripped = line.strip()
         if not stripped:
@@ -62,22 +93,24 @@ def compile_one_page_pdf(markdown_text):
             pdf.ln(2)
             pdf.set_font("Arial", "B", 11)
             pdf.cell(0, 5, stripped.replace('## ', '').strip().upper(), ln=1)
-            pdf.line(12, pdf.get_y(), 198, pdf.get_y())
+            pdf.line(LEFT_MARGIN, pdf.get_y(), PAGE_WIDTH - RIGHT_MARGIN, pdf.get_y())
             pdf.ln(1)
         elif stripped.startswith('* ') or stripped.startswith('- '):
             pdf.set_font("Arial", "", 9.5)
             bullet_text = stripped[2:].strip()
             # Strip markdown bold markers since FPDF base font won't render **
             bullet_text = bullet_text.replace('**', '').replace('*', '')
-            pdf.cell(4, 4.5, chr(149), ln=0)
-            pdf.multi_cell(0, 4.5, bullet_text)
+            pdf.set_x(LEFT_MARGIN)
+            pdf.cell(BULLET_INDENT, 4.5, chr(149), ln=0)
+            safe_multicell(bullet_text, CONTENT_WIDTH - BULLET_INDENT)
         else:
             pdf.set_font("Arial", "", 9.5)
             cleaned = stripped.replace('**', '').replace('*', '')
+            pdf.set_x(LEFT_MARGIN)
             if "|" in cleaned:
                 pdf.cell(0, 4.5, cleaned, ln=1, align="C")
             else:
-                pdf.multi_cell(0, 4.5, cleaned)
+                safe_multicell(cleaned, CONTENT_WIDTH)
 
     buffer = BytesIO()
     pdf.output(buffer)
