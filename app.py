@@ -103,6 +103,8 @@ if "proj_count" not in st.session_state: st.session_state.proj_count = 1
 if "cert_count" not in st.session_state: st.session_state.cert_count = 1
 if "final_output" not in st.session_state: st.session_state.final_output = None
 if "ats_analysis" not in st.session_state: st.session_state.ats_analysis = None
+if "debug_raw_text" not in st.session_state: st.session_state.debug_raw_text = ""
+if "debug_ai_response" not in st.session_state: st.session_state.debug_ai_response = ""
 
 
 def ensure_field(key, default=""):
@@ -159,6 +161,8 @@ with col_workspace:
                 if not raw_text.strip():
                     st.error("⚠️ No selectable text found in this PDF. It may be a scanned/image-based resume.")
                 else:
+                    st.session_state.debug_raw_text = raw_text
+
                     # Execute Structured Parsing Handshake with Gemini
                     parse_prompt = f"""
 You are an advanced resume extraction model. Read the unstructured resume text below carefully and
@@ -208,6 +212,8 @@ UNSTRUCTURED RESUME TEXT:
                         model='gemini-2.5-flash',
                         contents=parse_prompt,
                     )
+
+                    st.session_state.debug_ai_response = parse_response.text
 
                     parsed_json = extract_json_block(parse_response.text)
 
@@ -264,10 +270,19 @@ UNSTRUCTURED RESUME TEXT:
                     st.rerun()
             except Exception as parse_ex:
                 st.error(f"AI File Processing Error: Ensure your PDF contains searchable text. Error details: {parse_ex}")
+                if st.session_state.debug_ai_response:
+                    st.warning("The AI did respond — check the debug panel below to see what it returned.")
+
+    if st.session_state.debug_raw_text or st.session_state.debug_ai_response:
+        with st.expander("🔍 Debug: Last Upload Parsing Details"):
+            if st.session_state.debug_raw_text:
+                st.markdown("**Text extracted from PDF:**")
+                st.text(st.session_state.debug_raw_text)
+            if st.session_state.debug_ai_response:
+                st.markdown("**Raw AI extraction response:**")
+                st.text(st.session_state.debug_ai_response)
 
     st.write("---")
-
-    # GRANULAR FORMS MAPPED DIRECTLY TO SESSION CORES
     st.markdown("#### 👤 Personal Details")
     user_name = st.text_input("Full Name", value=st.session_state.user_data["name"])
     p_email = st.text_input("Email Address", value=st.session_state.user_data["email"])
