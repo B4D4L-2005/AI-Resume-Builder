@@ -17,6 +17,7 @@ st.set_page_config(
 )
 
 # 3. Secure API Client Initialization
+# Pulls your Gemini API Key safely from the hosting server environment variables
 API_KEY = st.secrets.get("GEMINI_API_KEY")
 
 try:
@@ -111,7 +112,7 @@ with col_right:
                 (Generate a premier 3-sentence summary highlighting foundational strength in data structures, language runtimes, and engineering focus objectives.)
                 
                 ## Technical Projects
-                (Create separate bold headings for each project. Generate 3 impact-focused bullet steps using the STAR method highlighting core efficiencies like 70% processing time savings or layout tests across 5+ devices.)
+                (Create separate bold headings for each project. Generate 3 impact-focused bullet steps using the STAR method highlighting precise optimizations.)
                 
                 ## Education
                 (Display college name, degree title, timeline details, core modules, and academic rankings or coding awards as clean items.)
@@ -125,9 +126,9 @@ with col_right:
                 (Provide technical upskilling records and development interests as neat bullet entries.)
                 """
                 
-                # Executing standard generative client call
+                # Executing standard generative client call with updated model identifier
                 response = client.models.generate_content(
-                    model='gemini-1.5-flash',
+                    model='gemini-2.5-flash',
                     contents=prompt,
                 )
                 
