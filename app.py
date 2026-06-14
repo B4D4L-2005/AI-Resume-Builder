@@ -299,6 +299,13 @@ UNSTRUCTURED RESUME TEXT:
                     if cert_list:
                         st.session_state.cert_count = max(st.session_state.cert_count, len(cert_list))
 
+                    # Clear cached widget states for all form_* keys so the text_input/text_area
+                    # widgets re-initialize from st.session_state.user_data on the next run
+                    # instead of keeping their previously-rendered (often empty) values.
+                    for k in list(st.session_state.keys()):
+                        if k.startswith("form_"):
+                            del st.session_state[k]
+
                     st.success("🎉 AI successfully processed the resume and mapped the fields below! Review the forms before optimizing.")
                     st.rerun()
             except Exception as parse_ex:
