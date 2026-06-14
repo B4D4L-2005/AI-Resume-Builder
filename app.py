@@ -162,25 +162,42 @@ with col_workspace:
                     # Execute Structured Parsing Handshake with Gemini
                     parse_prompt = f"""
 You are an advanced resume extraction model. Read the unstructured resume text below carefully and
-extract every available data point into a single flat JSON object using EXACTLY these keys:
+extract EVERY available entry (do not limit to one or two — extract ALL education entries, ALL
+internships/jobs, ALL projects, and ALL certifications found in the text).
 
-"name", "email", "phone", "location", "github", "linkedin", "target_role",
-"edu_inst_0", "edu_deg_0", "edu_time_0", "edu_score_0",
-"edu_inst_1", "edu_deg_1", "edu_time_1", "edu_score_1",
-"job_comp_0", "job_role_0", "job_time_0", "job_det_0",
-"sk_lang", "sk_db", "sk_tools",
-"proj_title_0", "proj_tech_0", "proj_desc_0",
-"proj_title_1", "proj_tech_1", "proj_desc_1",
-"cert_name_0", "cert_name_1"
+Output a single JSON object with EXACTLY this structure:
+
+{{
+  "name": "",
+  "email": "",
+  "phone": "",
+  "location": "",
+  "github": "",
+  "linkedin": "",
+  "target_role": "",
+  "sk_lang": "",
+  "sk_db": "",
+  "sk_tools": "",
+  "education": [
+    {{"institution": "", "degree": "", "timeline": "", "score": ""}}
+  ],
+  "internships": [
+    {{"company": "", "role": "", "timeline": "", "details": ""}}
+  ],
+  "projects": [
+    {{"title": "", "tech": "", "description": ""}}
+  ],
+  "certifications": ["", ""]
+}}
 
 RULES:
+- "education", "internships", "projects", "certifications" are ARRAYS — include ONE array element for EVERY entry found in the resume, in the order they appear. Do not cap the count.
 - "target_role" should be inferred from the candidate's most recent role, objective/summary line, or strongest skill area if not explicitly stated.
-- If the resume lists multiple education entries, map the most recent/highest one to the "_0" keys and the next to "_1" keys.
-- If the resume lists multiple projects, map them to "_0" and "_1" in the order they appear.
-- "proj_tech_0" / "proj_tech_1" should contain the technology stack used in that project (comma separated), extracted from the project description if not explicitly labeled.
-- "proj_desc_0" / "proj_desc_1" should be a concise 1-3 sentence summary of what the project does and the candidate's contribution/impact.
-- "job_det_0" should summarize the key responsibilities/achievements of the internship/job as plain text (use newlines between points if multiple).
-- If a field is genuinely not present anywhere in the text, set it to an empty string "". Never invent data.
+- "tech" for each project should list the technology stack used (comma separated), inferred from the description if not explicitly labeled.
+- "description" for each project should be a concise 1-3 sentence summary of what it does and the candidate's contribution/impact.
+- "details" for each internship/job should summarize key responsibilities/achievements as plain text (use \\n between points if multiple).
+- "certifications" is an array of plain strings, one per certification.
+- If a field or section is genuinely not present anywhere in the text, use an empty string "" (or empty array []  for missing sections). Never invent data.
 - Output ONLY the raw JSON object. No markdown fences, no commentary, no explanation before or after.
 
 UNSTRUCTURED RESUME TEXT:
@@ -194,44 +211,54 @@ UNSTRUCTURED RESUME TEXT:
 
                     parsed_json = extract_json_block(parse_response.text)
 
-                    # Commit parsed metrics straight to local session states,
-                    # creating any dynamically-indexed keys (e.g. edu_inst_1) that don't exist yet.
-                    filled_edu_indices = set()
-                    filled_job_indices = set()
-                    filled_proj_indices = set()
-                    filled_cert_indices = set()
+                    # --- Simple scalar fields ---
+                    for key in ["name", "email", "phone", "location", "github", "linkedin",
+                                "target_role", "sk_lang", "sk_db", "sk_tools"]:
+                        if key in parsed_json and parsed_json[key] is not None:
+                            st.session_state.user_data[key] = parsed_json[key]
 
-                    for key, value in parsed_json.items():
-                        if value is None:
-                            value = ""
-                        st.session_state.user_data[key] = value
+                    # --- Education array -> edu_inst_N, edu_deg_N, edu_time_N, edu_score_N ---
+                    edu_list = parsed_json.get("education") or []
+                    for idx, entry in enumerate(edu_list):
+                        if not isinstance(entry, dict):
+                            continue
+                        st.session_state.user_data[f"edu_inst_{idx}"] = entry.get("institution", "") or ""
+                        st.session_state.user_data[f"edu_deg_{idx}"] = entry.get("degree", "") or ""
+                        st.session_state.user_data[f"edu_time_{idx}"] = entry.get("timeline", "") or ""
+                        st.session_state.user_data[f"edu_score_{idx}"] = entry.get("score", "") or ""
+                    if edu_list:
+                        st.session_state.edu_count = max(st.session_state.edu_count, len(edu_list))
 
-                        if key.startswith("edu_") and value:
-                            idx = key.rsplit("_", 1)[-1]
-                            if idx.isdigit():
-                                filled_edu_indices.add(int(idx))
-                        if key.startswith("job_") and value:
-                            idx = key.rsplit("_", 1)[-1]
-                            if idx.isdigit():
-                                filled_job_indices.add(int(idx))
-                        if key.startswith("proj_") and value:
-                            idx = key.rsplit("_", 1)[-1]
-                            if idx.isdigit():
-                                filled_proj_indices.add(int(idx))
-                        if key.startswith("cert_") and value:
-                            idx = key.rsplit("_", 1)[-1]
-                            if idx.isdigit():
-                                filled_cert_indices.add(int(idx))
+                    # --- Internships array -> job_comp_N, job_role_N, job_time_N, job_det_N ---
+                    job_list = parsed_json.get("internships") or []
+                    for idx, entry in enumerate(job_list):
+                        if not isinstance(entry, dict):
+                            continue
+                        st.session_state.user_data[f"job_comp_{idx}"] = entry.get("company", "") or ""
+                        st.session_state.user_data[f"job_role_{idx}"] = entry.get("role", "") or ""
+                        st.session_state.user_data[f"job_time_{idx}"] = entry.get("timeline", "") or ""
+                        st.session_state.user_data[f"job_det_{idx}"] = entry.get("details", "") or ""
+                    if job_list:
+                        st.session_state.job_count = max(st.session_state.job_count, len(job_list))
 
-                    # Grow the row counters so newly-parsed entries actually render in the form
-                    if filled_edu_indices:
-                        st.session_state.edu_count = max(st.session_state.edu_count, max(filled_edu_indices) + 1)
-                    if filled_job_indices:
-                        st.session_state.job_count = max(st.session_state.job_count, max(filled_job_indices) + 1)
-                    if filled_proj_indices:
-                        st.session_state.proj_count = max(st.session_state.proj_count, max(filled_proj_indices) + 1)
-                    if filled_cert_indices:
-                        st.session_state.cert_count = max(st.session_state.cert_count, max(filled_cert_indices) + 1)
+                    # --- Projects array -> proj_title_N, proj_tech_N, proj_desc_N ---
+                    proj_list = parsed_json.get("projects") or []
+                    for idx, entry in enumerate(proj_list):
+                        if not isinstance(entry, dict):
+                            continue
+                        st.session_state.user_data[f"proj_title_{idx}"] = entry.get("title", "") or ""
+                        st.session_state.user_data[f"proj_tech_{idx}"] = entry.get("tech", "") or ""
+                        st.session_state.user_data[f"proj_desc_{idx}"] = entry.get("description", "") or ""
+                    if proj_list:
+                        st.session_state.proj_count = max(st.session_state.proj_count, len(proj_list))
+
+                    # --- Certifications array -> cert_name_N ---
+                    cert_list = parsed_json.get("certifications") or []
+                    cert_list = [c for c in cert_list if isinstance(c, str) and c.strip()]
+                    for idx, cert_name in enumerate(cert_list):
+                        st.session_state.user_data[f"cert_name_{idx}"] = cert_name
+                    if cert_list:
+                        st.session_state.cert_count = max(st.session_state.cert_count, len(cert_list))
 
                     st.success("🎉 AI successfully processed the resume and mapped the fields below! Review the forms before optimizing.")
                     st.rerun()
